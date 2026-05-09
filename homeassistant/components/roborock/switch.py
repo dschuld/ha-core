@@ -5,6 +5,7 @@ from dataclasses import dataclass
 import logging
 from typing import Any, override
 
+from roborock.data.v1.v1_containers import StatusField, StatusV2
 from roborock.devices.traits.b01 import Q10PropertiesApi
 from roborock.devices.traits.b01.q10 import (
     ButtonLightTrait,
@@ -16,6 +17,7 @@ from roborock.devices.traits.v1 import PropertiesApi
 from roborock.devices.traits.v1.common import RoborockSwitchBase
 from roborock.exceptions import RoborockException
 from roborock.roborock_message import RoborockDyadDataProtocol, RoborockZeoProtocol
+from roborock.roborock_typing import RoborockCommand
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.const import STATE_OFF, STATE_ON, EntityCategory
@@ -36,6 +38,7 @@ from .coordinator import (
 from .entity import (
     RoborockCoordinatedEntityA01,
     RoborockCoordinatedEntityB01Q10,
+    RoborockCoordinatedEntityV1,
     RoborockEntityV1,
 )
 
@@ -160,6 +163,10 @@ async def async_setup_entry(
                 if (v1_trait := description.trait(coordinator.properties_api))
                 is not None
             )
+            if coordinator.properties_api.device_features.is_field_supported(
+                StatusV2, StatusField.DRY_STATUS
+            ):
+                entities.append(RoborockMopDryerSwitch(coordinator))
         elif isinstance(coordinator, RoborockDataUpdateCoordinatorA01):
             entities.extend(
                 RoborockSwitchA01(
@@ -253,6 +260,39 @@ class RoborockSwitch(RoborockEntityV1, SwitchEntity):
     def is_on(self) -> bool | None:
         """Return True if entity is on."""
         return self._trait.is_on
+
+
+class RoborockMopDryerSwitch(RoborockCoordinatedEntityV1, SwitchEntity):
+    """Switch to control the dock mop dryer."""
+
+    _attr_translation_key = "mop_dryer"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator: RoborockDataUpdateCoordinator) -> None:
+        """Initialize the mop dryer switch."""
+        super().__init__(
+            f"mop_dryer_{coordinator.duid_slug}",
+            coordinator,
+            is_dock_entity=True,
+        )
+
+    @property
+    @override
+    def is_on(self) -> bool | None:
+        """Return True if the mop dryer is running."""
+        if self.coordinator.data is None:
+            return None
+        return bool(self.coordinator.data.status.dry_status)
+
+    @override
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on the mop dryer."""
+        await self.send(RoborockCommand.APP_SET_DRYER_STATUS, {"status": 1})
+
+    @override
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off the mop dryer."""
+        await self.send(RoborockCommand.APP_SET_DRYER_STATUS, {"status": 0})
 
 
 class RoborockSwitchA01(RoborockCoordinatedEntityA01, SwitchEntity):
