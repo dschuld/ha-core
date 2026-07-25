@@ -6,11 +6,19 @@ from typing import Any
 
 import pytest
 import roborock
+from roborock.data.v1.v1_containers import StatusField, StatusV2
 from roborock.roborock_message import RoborockZeoProtocol
+from roborock.roborock_typing import RoborockCommand
 from syrupy.assertion import SnapshotAssertion
 
 from homeassistant.components.switch import SERVICE_TURN_OFF, SERVICE_TURN_ON
-from homeassistant.const import ATTR_ASSUMED_STATE, STATE_ON, STATE_UNKNOWN, Platform
+from homeassistant.const import (
+    ATTR_ASSUMED_STATE,
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNKNOWN,
+    Platform,
+)
 from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
@@ -89,6 +97,78 @@ async def test_update_success(
     state = hass.states.get(entity_id)
     assert state is not None
     assert state.state == "on"
+
+
+@pytest.mark.parametrize(
+    ("service", "status"),
+    [
+        pytest.param(SERVICE_TURN_ON, 1, id="turn_on"),
+        pytest.param(SERVICE_TURN_OFF, 0, id="turn_off"),
+    ],
+)
+async def test_mop_dryer_switch_command(
+    hass: HomeAssistant,
+    setup_entry: MockConfigEntry,
+    fake_vacuum: FakeDevice,
+    service: str,
+    status: int,
+) -> None:
+    """Test controlling the mop dryer."""
+    entity_id = "switch.roborock_s7_maxv_dock_mop_dryer"
+    assert hass.states.get(entity_id) is not None
+    assert fake_vacuum.v1_properties is not None
+
+    await hass.services.async_call(
+        "switch",
+        service,
+        blocking=True,
+        target={"entity_id": entity_id},
+    )
+
+    fake_vacuum.v1_properties.command.send.assert_awaited_once_with(
+        RoborockCommand.APP_SET_DRYER_STATUS,
+        params={"status": status},
+    )
+
+
+async def test_mop_dryer_switch_state(
+    hass: HomeAssistant,
+    setup_entry: MockConfigEntry,
+    fake_vacuum: FakeDevice,
+) -> None:
+    """Test the mop dryer state follows the coordinator."""
+    entity_id = "switch.roborock_s7_maxv_dock_mop_dryer"
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state == STATE_OFF
+    assert fake_vacuum.v1_properties is not None
+
+    fake_vacuum.v1_properties.status.dry_status = 1
+    coordinator = setup_entry.runtime_data.v1[0]
+    coordinator.async_set_updated_data(coordinator.data)
+
+    state = hass.states.get(entity_id)
+    assert state is not None
+    assert state.state == STATE_ON
+
+
+async def test_mop_dryer_switch_unsupported(
+    hass: HomeAssistant,
+    mock_roborock_entry: MockConfigEntry,
+    fake_vacuum: FakeDevice,
+) -> None:
+    """Test the mop dryer switch is not created when unsupported."""
+    assert fake_vacuum.v1_properties is not None
+    device_features = fake_vacuum.v1_properties.device_features
+    device_features.is_field_supported.return_value = False
+
+    await hass.config_entries.async_setup(mock_roborock_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert hass.states.get("switch.roborock_s7_maxv_dock_mop_dryer") is None
+    device_features.is_field_supported.assert_called_once_with(
+        StatusV2, StatusField.DRY_STATUS
+    )
 
 
 @pytest.mark.parametrize(
