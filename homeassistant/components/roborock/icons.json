@@ -140,6 +140,9 @@
       "dust_collection": {
         "default": "mdi:delete"
       },
+      "mop_dryer": {
+        "default": "mdi:heat-wave"
+      },
       "off_peak_switch": {
         "default": "mdi:power-plug"
       },

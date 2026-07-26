@@ -623,6 +623,9 @@
       "dust_collection": {
         "name": "Dust collection"
       },
+      "mop_dryer": {
+        "name": "Mop dryer"
+      },
       "off_peak_switch": {
         "name": "Off-peak charging"
       },
